@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>سين: لعنة بابل — PlayCanvas</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #100d0a; color: #f6e9d2; font-family: system-ui, "Segoe UI", Tahoma, sans-serif; overflow: hidden; touch-action: none; }
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+    #hud, #load, #orient { position: fixed; z-index: 3; }
+    #load { inset: 0; display: flex; align-items: flex-end; padding: 28px 22px calc(28px + env(safe-area-inset-bottom)); background: linear-gradient(180deg, rgba(16,13,10,.2), rgba(16,13,10,.82)); }
+    #load .card { width: min(520px, 100%); }
+    h1 { margin: 0 0 8px; font-size: 22px; letter-spacing: .04em; font-weight: 650; }
+    p { margin: 0 0 10px; line-height: 1.55; color: #e6d3b4; }
+    #bar { height: 4px; background: rgba(225,183,111,.25); margin: 12px 0; }
+    #bar span { display: block; height: 100%; width: 0%; background: #e1b76f; }
+    button { font: inherit; cursor: pointer; color: #f6e9d2; background: linear-gradient(100deg, rgba(86,55,24,.95), rgba(31,24,17,.95)); border: 1px solid rgba(225,183,111,.62); min-height: 48px; padding: 10px 16px; }
+    a { color: #f2d99f; }
+    #stick { position: fixed; z-index: 4; left: calc(18px + env(safe-area-inset-left)); bottom: calc(18px + env(safe-area-inset-bottom)); width: 118px; height: 118px; border-radius: 50%; border: 1px solid rgba(225,183,111,.7); background: rgba(9,8,7,.45); display: none; }
+    #knob { position: absolute; width: 54px; height: 54px; border-radius: 50%; left: 32px; top: 32px; background: rgba(225,183,111,.85); }
+    #run, #qual { position: fixed; z-index: 4; display: none; min-width: 72px; }
+    #run { right: calc(16px + env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom)); }
+    #qual { right: calc(16px + env(safe-area-inset-right)); top: calc(14px + env(safe-area-inset-top)); }
+    #stats { position: fixed; z-index: 4; left: 12px; top: calc(12px + env(safe-area-inset-top)); font-size: 12px; line-height: 1.45; background: rgba(9,8,7,.55); padding: 8px 10px; display: none; max-width: 70vw; }
+    #hint { position: fixed; z-index: 5; left: 50%; top: calc(18px + env(safe-area-inset-top)); transform: translateX(-50%); margin: 0; color: #f6e9d2; background: rgba(9,8,7,.55); padding: 8px 14px; display: none; }
+    #orient { inset: 0; display: none; align-items: center; justify-content: center; background: #100d0a; text-align: center; padding: 24px; }
+    @media (orientation: portrait) and (max-width: 900px) { #orient { display: flex; } }
+  </style>
+</head>
+<body>
+  <canvas id="view"></canvas>
+  <div id="orient">أدر الجهاز إلى العرض الأفقي. اللعبة الأصلية تُقفل على العرض الأفقي، وهذه النسخة تبقي القاعدة نفسها.</div>
+  <div id="load">
+    <div class="card">
+      <h1>سين: لعنة بابل</h1>
+      <p id="status">جارٍ فتح المحرك…</p>
+      <div id="bar"><span id="fill"></span></div>
+      <p>نقل PlayCanvas. القاعة والأجنحة تُحمَّل عند الباب الملكي. النسخة الأصلية ما زالت متاحة.</p>
+      <p><a href="/sin-babylon-view/original/">النسخة الأصلية Three.js</a></p>
+      <button id="go" type="button" disabled>ادخل المدينة</button>
+    </div>
+  </div>
+  <div id="stick" aria-hidden="true"><div id="knob"></div></div>
+  <button id="run" type="button">ركض</button>
+  <button id="qual" type="button">الجودة: عالية</button>
+  <div id="stats"></div>
+  <p id="hint"></p>
+  <script src="./vendor/clipper.js"></script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
