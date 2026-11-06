@@ -1,13 +1,8 @@
 import * as pc from '../vendor/playcanvas.mjs';
 import { createRegistry } from './registry.js';
-import { buildCity, buildRoyalDoor, setCityQuality, addCityCircle, resetCityCircles, cityCircles } from './city.js';
-import { buildHall } from './hall.js';
-import { buildWings } from './wings.js';
-import { DOOR_URL } from './paths.js';
-import { boundsOf } from './fit.js';
+import { buildCity, setCityQuality, addCityCircle, resetCityCircles, cityCircles } from './city.js';
 import { buildGround } from './grass.js';
 import { buildVegetation, updateVegetation } from './grove.js';
-import { carveDoor, indexShell, interiorVolume } from './shell.js';
 
 const {
   Application,
@@ -119,16 +114,8 @@ let dist = CAM_DIST;
 let speed = 0;
 const keys = new Set();
 const stick = { x: 0, y: 0, run: false };
-const zones = { avenue: 'idle', palace: 'idle', interior: 'idle' };
-const zoneRoots = { avenue: null, palace: null };
-let palaceHeld = false;
-let interiorHeld = false;
-let interiorRoot = null;
-const interiorUrls = [];
-let portal = null;
-let doorRig = null;
-let shell = null;
-let interiorVol = null;
+const zones = { avenue: 'idle' };
+const zoneRoots = { avenue: null };
 let groundY = 0;
 const KNOWN_HERO_CLIPS = [
   'walk_relaxed',
@@ -406,160 +393,6 @@ function playAnim(name) {
   }
 }
 
-let streamLock = 0;
-
-async function ensurePalace() {
-  if (palaceHeld || zones.palace === 'loading' || zones.palace === 'ready') return;
-  zones.palace = 'loading';
-  streamLock += 1;
-  try {
-    const root = new Entity('palace');
-    world.addChild(root);
-    zoneRoots.palace = root;
-    const { entity } = await placeContainer(ASSET + 'palace.glb', root, (ent) => {
-      ent.setLocalScale(PAL.s, PAL.s, PAL.s);
-    });
-    const minY = groundFromEntity(entity);
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minZ = Infinity;
-    let maxZ = -Infinity;
-    for (const render of entity.findComponents('render') || []) {
-      for (const mi of render.meshInstances) {
-        const c = mi.aabb.center;
-        const h = mi.aabb.halfExtents;
-        minX = Math.min(minX, c.x - h.x);
-        maxX = Math.max(maxX, c.x + h.x);
-        minZ = Math.min(minZ, c.z - h.z);
-        maxZ = Math.max(maxZ, c.z + h.z);
-      }
-    }
-    entity.setLocalPosition(-(minX + maxX) / 2, -minY, -(minZ + maxZ) / 2);
-    root.setEulerAngles(0, PAL.ry * 180 / Math.PI, 0);
-    root.setPosition(PAL.x, 0, PAL.z);
-    calmPalaceMetals(entity);
-    palaceHeld = true;
-    zones.palace = 'ready';
-    const door = await buildRoyalDoor(registry, world);
-    doorRig = door;
-    window.__door = door;
-    const hb = boundsOf(hero);
-    portal = { x: 1, y: door.floorY, z: door.frontZ, H: Math.max(1.2, hb.sy), doorWidth: door.width };
-    const carved = carveDoor(root, door.frontZ);
-    window.__doorHole = carved;
-    shell = indexShell(root);
-    window.__shellTris = shell.triangles;
-  } catch (err) {
-    zones.palace = 'error';
-    console.error(err);
-  } finally {
-    streamLock -= 1;
-  }
-}
-
-function calmPalaceMetals(root) {
-  for (const render of root.findComponents('render') || []) {
-    for (const mi of render.meshInstances || []) {
-      const material = mi.material;
-      if (!material || material.metalness == null) continue;
-      if ((material.metalness || 0) > 0.35 || material.metalnessMap) {
-        material.metalness = Math.min(material.metalness || 0, 0.22);
-        material.metalnessMap = null;
-        material.update();
-      }
-    }
-  }
-}
-
-function freeOwnedMaterials(root) {
-  if (!root) return 0;
-  const seen = new Set();
-  let n = 0;
-  for (const render of root.findComponents('render') || []) {
-    for (const mi of render.meshInstances || []) {
-      const material = mi.material;
-      if (!material || !material._sinOwned || seen.has(material)) continue;
-      seen.add(material);
-      try { material.destroy(); n += 1; } catch (err) { console.warn('material', err); }
-    }
-  }
-  return n;
-}
-
-function releaseInterior() {
-  if (!interiorHeld && zones.interior !== 'ready') return;
-  const meshes = (window.__fireMeshes || []).concat(window.__wingMeshes || []);
-  window.__fireMeshes = null;
-  window.__fireMats = null;
-  window.__wingMeshes = null;
-  window.__wingBlock = null;
-  interiorVol = null;
-  const freed = freeOwnedMaterials(interiorRoot);
-  interiorRoot?.destroy();
-  for (const mesh of meshes) {
-    try { mesh.destroy(); } catch (err) { console.warn('mesh', err); }
-  }
-  interiorRoot = null;
-  for (const url of interiorUrls) registry.release(url);
-  interiorUrls.length = 0;
-  interiorHeld = false;
-  zones.interior = 'released';
-  window.__lastFreedMaterials = freed;
-}
-
-async function ensureInterior() {
-  if (interiorHeld || zones.interior === 'loading' || zones.interior === 'ready') return;
-  if (!palaceHeld) await ensurePalace();
-  if (!portal) return;
-  zones.interior = 'loading';
-  streamLock += 1;
-  try {
-    const hall = await buildHall(registry, interiorUrls, world, portal);
-    let wings = { gaps: [], rooms: [] };
-    try {
-      wings = await buildWings(registry, interiorUrls, hall.root, hall.metrics);
-    } catch (err) {
-      wings = { gaps: ['تعذّر إكمال الأجنحة: ' + (err && err.message ? err.message : err)], rooms: [] };
-      console.error(err);
-    }
-    interiorRoot = hall.root;
-    interiorHeld = true;
-    zones.interior = 'ready';
-    interiorVol = interiorVolume(portal, {
-      boxes: hall.boxes,
-      ramp: hall.ramp,
-      H: hall.metrics.H,
-      width: hall.metrics.width,
-      length: hall.metrics.length
-    }, wings);
-    window.__wingMeshes = wings.meshes || [];
-    window.__gaps = (hall.gaps || []).concat(wings.gaps || []);
-    window.__hall = { ...hall.metrics, rooms: wings.rooms, boxes: (hall.boxes || []).length, wingBoxes: (wings.boxes || []).length };
-    window.__shellTris = shell ? shell.triangles : 0;
-  } catch (err) {
-    zones.interior = 'error';
-    console.error(err);
-    window.__gaps = [String(err && err.stack ? err.stack : err)];
-  } finally {
-    streamLock -= 1;
-  }
-}
-
-function releasePalace() {
-  releaseInterior();
-  if (!palaceHeld && zones.palace !== 'ready') return;
-  doorRig?.entity?.destroy();
-  doorRig = null;
-  zoneRoots.palace?.destroy();
-  zoneRoots.palace = null;
-  registry.release(ASSET + 'palace.glb');
-  registry.release(DOOR_URL);
-  palaceHeld = false;
-  portal = null;
-  shell = null;
-  zones.palace = 'released';
-}
-
 function readMove() {
   let fw = stick.y;
   let st = stick.x;
@@ -573,37 +406,7 @@ function readMove() {
   return { fw, st, run };
 }
 
-function syncExteriorShell() {
-  if (!hero) return;
-  const p = hero.getPosition();
-  const inside = !!(portal && interiorVol && interiorVol.owns(p.x, p.z) && p.z > portal.z + 0.4);
-  if (zoneRoots.palace) zoneRoots.palace.enabled = !inside;
-  if (zoneRoots.avenue) zoneRoots.avenue.enabled = !inside;
-  window.__shellHidden = inside;
-}
-
-function palGround(x, z, y0) {
-  if (!shell || x < PAL_BOX.x0 || x > PAL_BOX.x1 || z < PAL_BOX.z0 || z > PAL_BOX.z1) return 0;
-  return shell.ground(x, z, y0);
-}
-
-function palaceBlocked(x, z) {
-  if (doorRig && (doorRig.open() || doorRig.passing())) {
-    const portalDoor = doorRig.portal();
-    if (Math.abs(x - portalDoor.x) < portalDoor.width * 0.48 && z > portalDoor.frontZ - 0.35 && z < portalDoor.frontZ + 9) return false;
-  }
-  if (z > PL_Z0 + 2 && Math.abs(x) > 50) return true;
-  if (z > PAL.z + 32) return true;
-  if (z > PL_POOL0 && z < PL_POOL1 && Math.abs(x) > 10.4 && Math.abs(x) < 18) return true;
-  const p = hero.getPosition();
-  if (shell && shell.wallAhead(p.x, p.y, p.z, x, z)) return true;
-  return palGround(x, z, p.y) - p.y > 0.6;
-}
-
 function blocked(x, z) {
-  if (interiorVol && interiorVol.owns(x, z)) return interiorVol.blocks(x, z);
-  if (doorRig && doorRig.blocks(x, z)) return true;
-  if (palaceHeld && palaceBlocked(x, z)) return true;
   if (Math.abs(z) < GATE_HD + 0.4 && Math.abs(x) > PASS && Math.abs(x) < GATE_HW + 0.3) return true;
   const list = cityCircles();
   for (let i = 0; i < list.length; i += 1) {
@@ -617,9 +420,7 @@ function blocked(x, z) {
 
 function applyGround(frame) {
   const p = hero.getPosition();
-  const inside = interiorVol && interiorVol.owns(p.x, p.z);
-  const gy = inside ? interiorVol.y(p.x, p.z) : palGround(p.x, p.z, p.y);
-  groundY += (gy - groundY) * Math.min(1, frame * (inside ? 8 : 12));
+  groundY += (0 - groundY) * Math.min(1, frame * 12);
   hero.setPosition(p.x, groundY, p.z);
 }
 
@@ -645,7 +446,6 @@ app.on('update', (dt) => {
     skyRoot.setPosition(c.x, c.y, c.z);
   }
   updateVegetation(camera.getPosition(), high);
-  syncExteriorShell();
   const fireMats = window.__fireMats;
   if (fireMats) {
     const t = now / 1000;
@@ -662,19 +462,7 @@ app.on('update', (dt) => {
   const { fw, st, run } = readMove();
   const sy = Math.sin(yaw);
   const cy = Math.cos(yaw);
-  const pushFrac = () => {
-    const layer = hero.anim && hero.anim.baseLayer;
-    if (!layer) return 0;
-    const dur = layer.activeStateDuration || 0;
-    return dur > 0 ? layer.activeStateCurrentTime / dur : 0;
-  };
-  const doorState = doorRig ? doorRig.update(frame, hero, () => playAnim('push_object'), pushFrac) : null;
-  if (doorState && doorState.yaw != null) {
-    heroYaw = doorState.yaw;
-    yaw = doorState.yaw;
-    hero.setEulerAngles(0, 0, 0);
-  }
-  if (!(doorState && doorState.lock)) {
+  {
     let mx = sy * fw - cy * st;
     let mz = cy * fw + sy * st;
     const len = Math.hypot(mx, mz);
@@ -701,11 +489,6 @@ app.on('update', (dt) => {
     }
   }
   applyGround(frame);
-  const z = hero.getPosition().z;
-  if (z > 10) ensurePalace();
-  if (portal && z > portal.z - 30) ensureInterior();
-  if (portal && z < portal.z - 90 && interiorHeld) releaseInterior();
-  if (z < -20 && palaceHeld && streamLock === 0) releasePalace();
   const pos = hero.getPosition();
   const cp = Math.cos(pitch);
   const hx = pos.x;
@@ -729,7 +512,7 @@ function paintStats(frame) {
   const draws = app.stats?.drawCalls?.total ?? app.stats?.drawCalls ?? '—';
   el.textContent = [
     'FPS ' + fpsEma.toFixed(1) + '  إطار ' + (frame * 1000).toFixed(1) + ' ms',
-    'المناطق: الشارع ' + zones.avenue + ' / القصر ' + zones.palace + ' / الداخل ' + zones.interior,
+    'المناطق: الشارع ' + zones.avenue,
     'أصول مثبتة ' + registry.snapshot().filter((r) => r.ready).length,
     'Draw ' + draws + (heap == null ? '' : '  JS ' + heap + ' MB'),
     'الحركات: ' + [...clipByName.keys()].join('، ')
@@ -751,15 +534,15 @@ window.__controlsTest = {
   }
 };
 window.__physics = {
-  ground: (x, z, y) => palGround(x, z, y == null ? 0 : y),
+  ground: () => 0,
   blocked: (x, z) => blocked(x, z),
   place: (x, y, z) => {
     if (!hero) return;
     hero.setPosition(x, y, z);
     groundY = y;
   },
-  owns: (x, z) => !!(interiorVol && interiorVol.owns(x, z)),
-  floor: (x, z) => (interiorVol ? interiorVol.y(x, z) : 0),
+  owns: () => false,
+  floor: () => 0,
   circles: () => cityCircles().length
 };
 window.__look = (x, y, z, tx, ty, tz) => {
@@ -793,11 +576,6 @@ window.__mem = {
   zones: () => ({ ...zones }),
   assets: () => registry.snapshot(),
   fps: () => fpsEma,
-  releasePalace,
-  ensurePalace,
-  ensureInterior,
-  releaseInterior,
-  portal: () => portal,
   sample: () => {
     const heap = performance.memory || {};
     const vram = app.graphicsDevice._vram || {};
@@ -831,24 +609,8 @@ window.__mem = {
   }
 };
 window.__cycle = async () => {
-  const t0 = performance.now();
-  await ensurePalace();
-  const palaceMs = performance.now() - t0;
-  const t1 = performance.now();
-  await ensureInterior();
-  const interiorMs = performance.now() - t1;
   const loaded = window.__mem.sample();
-  releasePalace();
-  if (window.gc) window.gc();
-  const released = window.__mem.sample();
-  return {
-    palaceMs: Math.round(palaceMs),
-    interiorMs: Math.round(interiorMs),
-    loaded,
-    released,
-    freedMaterials: window.__lastFreedMaterials || 0,
-    gaps: window.__gaps || []
-  };
+  return { loaded, gaps: [] };
 };
 
 $('go').onclick = () => {
