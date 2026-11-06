@@ -69,34 +69,38 @@ app.root.addChild(camera);
 const sun = new Entity('sun');
 sun.addComponent('light', {
   type: 'directional',
-  color: new Color(1, 0.70, 0.38),
-  intensity: 3.6,
+  color: new Color(1, 0.90, 0.74),
+  intensity: 2.05,
   castShadows: true,
   shadowResolution: 2048,
-  shadowDistance: 90
+  shadowDistance: 64,
+  shadowBias: 0.35,
+  normalOffsetBias: 0.12,
+  shadowIntensity: 0.72,
+  shadowType: pc.SHADOW_PCF5
 });
 app.root.addChild(sun);
 const fill = new Entity('fill');
 fill.addComponent('light', {
   type: 'directional',
-  color: new Color(0.32, 0.55, 0.85),
-  intensity: 0.55,
+  color: new Color(0.55, 0.68, 0.86),
+  intensity: 0.28,
   castShadows: false
 });
 app.root.addChild(fill);
-const skyDown = new Entity('skyDown');
+const skyDown = new Entity('bounce');
 skyDown.addComponent('light', {
   type: 'directional',
-  color: new Color(0.40, 0.60, 0.82),
-  intensity: 0.9,
+  color: new Color(0.78, 0.52, 0.30),
+  intensity: 0.22,
   castShadows: false
 });
 app.root.addChild(skyDown);
-app.scene.ambientLight = new Color(0.9 * 0.5 * (0.40 + 0.56), 0.9 * 0.5 * (0.60 + 0.38), 0.9 * 0.5 * (0.82 + 0.20));
-app.scene.exposure = 1.1;
+app.scene.ambientLight = new Color(0.20, 0.18, 0.16);
+app.scene.exposure = 1.05;
 app.scene.fog.type = 'exp2';
 app.scene.fog.color = new Color(0.2373, 0.1285, 0.0522);
-app.scene.fog.density = 0.0062;
+app.scene.fog.density = 0.0028;
 
 const SUN0 = new Vec3(-0.45, 0.3, -0.84).normalize();
 const SKY_THETA = Math.atan2(SUN0.z, SUN0.x);
@@ -110,6 +114,8 @@ let hero = null;
 let heroYaw = 0;
 let yaw = 0;
 let pitch = CAM_PITCH;
+let yawTarget = 0;
+let pitchTarget = CAM_PITCH;
 let dist = CAM_DIST;
 let speed = 0;
 const keys = new Set();
@@ -143,6 +149,10 @@ function applyQuality() {
   const light = sun.light;
   light.castShadows = high;
   light.shadowResolution = high ? 2048 : 1024;
+  light.shadowType = pc.SHADOW_PCF5;
+  light.shadowBias = 0.35;
+  light.normalOffsetBias = 0.12;
+  light.shadowIntensity = 0.72;
   app.graphicsDevice.maxPixelRatio = 1;
   setCityQuality(high);
 }
@@ -187,8 +197,8 @@ function bindInput() {
   touch.addEventListener('pointermove', (e) => {
     if (e.pointerId === sid) moveStick(e, stickEl.getBoundingClientRect(), knob);
     else if (e.pointerId === cid) {
-      yaw -= (e.clientX - lx) * sens;
-      pitch = Math.max(-0.1, Math.min(1.1, pitch + (e.clientY - ly) * sens * 0.8));
+      yawTarget -= (e.clientX - lx) * sens;
+      pitchTarget = Math.max(-0.15, Math.min(0.85, pitchTarget + (e.clientY - ly) * sens * 0.8));
       lx = e.clientX;
       ly = e.clientY;
     }
@@ -263,6 +273,8 @@ async function texturedPlane(url, w, d, x, z, y, color, repeatX, repeatY, rough)
     tex.addressV = pc.ADDRESS_REPEAT;
     mat.diffuseMapTiling = new Vec2(repeatX, repeatY || 1);
   }
+  mat.depthBias = -2;
+  mat.depthBiasSlope = -1.5;
   mat.update();
   const ent = new Entity(url);
   ent.addComponent('render', { type: 'plane', material: mat });
@@ -281,7 +293,7 @@ async function buildAvenue() {
   const grass = await buildGround(registry);
   root.addChild(grass);
   const stone = '/sin-babylon-view/play/embedded/road-stone.jpg';
-  root.addChild(await texturedPlane(stone, 9, 160, 0, 0, 0.02, new Color(1, 1, 1), 3, 53, 0.9));
+  root.addChild(await texturedPlane(stone, 9, 160, 0, 0, 0.05, new Color(1, 1, 1), 3, 53, 0.9));
   const tileX = 9 / 3;
   const tileZ = 160 / 53;
   const slabW = 9.08;
@@ -289,20 +301,20 @@ async function buildAvenue() {
   const z1 = 8.45;
   const slabD = z1 - z0;
   const cz = (z0 + z1) / 2;
-  const gateFloor = await texturedPlane(stone, slabW, slabD, 0, cz, 0.06, new Color(1, 1, 1), slabW / tileX, slabD / tileZ, 0.9);
+  const gateFloor = await texturedPlane(stone, slabW, slabD, 0, cz, 0.07, new Color(1, 1, 1), slabW / tileX, slabD / tileZ, 0.9);
   const gateMat = gateFloor.render.meshInstances[0].material;
   gateMat.diffuseMapOffset = new Vec2((-slabW / 2 + 4.5) / tileX, (80 - (cz + slabD / 2)) / tileZ);
   gateMat.update();
   root.addChild(gateFloor);
-  const panel = await texturedPlane('/sin-babylon-view/play/embedded/gate-panel.jpg', 8.4, 8.4, 0, -17, 0.04, new Color(1, 1, 1), 1, 1, 0.85);
+  const panel = await texturedPlane('/sin-babylon-view/play/embedded/gate-panel.jpg', 8.4, 8.4, 0, -17, 0.06, new Color(1, 1, 1), 1, 1, 0.85);
   panel.setEulerAngles(0, 180, 0);
   root.addChild(panel);
   const L = PL_FRONT - PL_Z0;
-  root.addChild(await texturedPlane(ASSET + 'plaza_stone.jpg', 64, L, 0, PL_Z0 + L / 2, 0.02, new Color(0.80, 0.76, 0.68), 64 / 4.5, L / 4.5, 0.92));
+  root.addChild(await texturedPlane(ASSET + 'plaza_stone.jpg', 64, L, 0, PL_Z0 + L / 2, 0.05, new Color(0.80, 0.76, 0.68), 64 / 4.5, L / 4.5, 0.92));
   const zA = 79;
   const zB = PL_MED_Z - PL_MED / 2 + 0.3;
-  root.addChild(await texturedPlane(ASSET + 'plaza_paving.jpg', PL_PATH_W, zB - zA, 0, (zA + zB) / 2, 0.03, new Color(0.82, 0.78, 0.69), 1, (zB - zA) / PL_PATH_W, 0.9));
-  root.addChild(await texturedPlane(ASSET + 'plaza_mosaic.jpg', PL_MED, PL_MED, 0, PL_MED_Z, 0.04, new Color(0.85, 0.81, 0.73), 1, 1, 0.85));
+  root.addChild(await texturedPlane(ASSET + 'plaza_paving.jpg', PL_PATH_W, zB - zA, 0, (zA + zB) / 2, 0.065, new Color(0.82, 0.78, 0.69), 1, (zB - zA) / PL_PATH_W, 0.9));
+  root.addChild(await texturedPlane(ASSET + 'plaza_mosaic.jpg', PL_MED, PL_MED, 0, PL_MED_Z, 0.08, new Color(0.85, 0.81, 0.73), 1, 1, 0.85));
   root.addChild(await texturedPlane(ASSET + 'canal_water.jpg', 5, 24, -14.5, 103, 0.2, new Color(1, 1, 1)));
   root.addChild(await texturedPlane(ASSET + 'canal_water.jpg', 5, 24, 14.5, 103, 0.2, new Color(1, 1, 1)));
 
@@ -321,7 +333,7 @@ async function buildAvenue() {
     return Math.max(0.01, maxY - baseMin);
   })();
   probe.destroy();
-  const PALM_X = 7.9;
+  const PALM_X = 12.8;
   const PALM_STEP = 8;
   const PALM_H = 9.4;
   const STATUE_Z = 121;
@@ -402,7 +414,6 @@ function readMove() {
   if (keys.has('KeyD') || keys.has('ArrowRight')) st += 1;
   if (keys.has('KeyA') || keys.has('ArrowLeft')) st -= 1;
   if (keys.has('ShiftLeft') || keys.has('ShiftRight')) run = true;
-  if (keys.has('KeyQ')) yaw += 0;
   return { fw, st, run };
 }
 
@@ -457,8 +468,13 @@ app.on('update', (dt) => {
     paintStats(frame);
     return;
   }
-  if (keys.has('KeyQ')) yaw += frame * 1.8;
-  if (keys.has('KeyE')) yaw -= frame * 1.8;
+  if (keys.has('KeyQ')) yawTarget += frame * 1.6;
+  if (keys.has('KeyE')) yawTarget -= frame * 1.6;
+  const lookT = 1 - Math.exp(-frame * 10);
+  let dyaw = yawTarget - yaw;
+  dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+  yaw += dyaw * lookT;
+  pitch += (pitchTarget - pitch) * lookT;
   const { fw, st, run } = readMove();
   const sy = Math.sin(yaw);
   const cy = Math.cos(yaw);
@@ -498,10 +514,10 @@ app.on('update', (dt) => {
   camera.lookAt(hx, hy, hz);
   sun.setPosition(hx + SUN.x * 80, hy + SUN.y * 80, hz + SUN.z * 80);
   sun.lookAt(hx, hy, hz);
-  fill.setPosition(hx - SUN.x * 60, 38, hz - SUN.z * 60);
+  fill.setPosition(hx - SUN.x * 70, 46, hz - SUN.z * 70);
   fill.lookAt(hx, hy, hz);
-  skyDown.setPosition(hx, hy + 48, hz);
-  skyDown.lookAt(hx, hy, hz);
+  skyDown.setPosition(hx, 0.4, hz);
+  skyDown.lookAt(hx, hy + 6, hz);
   paintStats(frame);
 });
 
@@ -554,10 +570,10 @@ window.__look = (x, y, z, tx, ty, tz) => {
   const hy = p.y + CAM_LOOK;
   sun.setPosition(p.x + SUN.x * 80, hy + SUN.y * 80, p.z + SUN.z * 80);
   sun.lookAt(p.x, hy, p.z);
-  fill.setPosition(p.x - SUN.x * 60, 38, p.z - SUN.z * 60);
+  fill.setPosition(p.x - SUN.x * 70, 46, p.z - SUN.z * 70);
   fill.lookAt(p.x, hy, p.z);
-  skyDown.setPosition(p.x, hy + 48, p.z);
-  skyDown.lookAt(p.x, p.y, p.z);
+  skyDown.setPosition(p.x, 0.4, p.z);
+  skyDown.lookAt(p.x, hy + 6, p.z);
 };
 window.__shot = () => new Promise((resolve) => {
   app.renderNextFrame = true;

@@ -23,6 +23,9 @@ void getAlbedo() {
   vec3 zn = texture2D(gZone, gp * (1.0 / 640.0) + 0.5).rgb;
   float wW = zn.r;
   float wD = zn.g;
+  float onRoad = (1.0 - smoothstep(4.55, 5.35, abs(gp.x))) * (1.0 - smoothstep(80.0, 82.0, abs(gp.y)));
+  float onPlaza = step(75.0, gp.y) * step(gp.y, 162.0) * (1.0 - smoothstep(32.0, 34.0, abs(gp.x)));
+  wW *= max(onRoad, onPlaza);
   float wL = max(1.0 - wW - wD, 0.0);
   const vec3 gAvL = vec3(0.05565, 0.08838, 0.01358);
   const vec3 gAvD = vec3(0.02277, 0.03581, 0.00556);

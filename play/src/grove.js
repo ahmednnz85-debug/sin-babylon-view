@@ -275,7 +275,7 @@ function yxzScale(px, py, pz, rx, ry, rz, sx, sy, sz) {
   const r20 = c2 * s1 * s3 - s2 * c3;
   const r01 = s2 * s1 * c3 - c2 * s3;
   const r11 = c1 * c3;
-  const r21 = s2 * c3 + c2 * s1 * c3;
+  const r21 = s2 * s3 + c2 * s1 * c3;
   const r02 = c1 * s2;
   const r12 = -s1;
   const r22 = c1 * c2;
