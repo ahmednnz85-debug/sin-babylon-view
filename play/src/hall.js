@@ -745,7 +745,7 @@ export async function buildHall(registry, urls, world, portal) {
     GAPS.push('تعذّر ترتيب مجموعة الأغراض: ' + (err && err.message ? err.message : err));
   }
   const ly = Math.min(CH * 0.46, 3.1 * H);
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 6 && fires.length; i += 1) {
     const f = fires[Math.min(fires.length - 1, Math.round(i * (fires.length - 1) / 5))];
     const light = new Entity('hall-light');
     light.addComponent('light', {

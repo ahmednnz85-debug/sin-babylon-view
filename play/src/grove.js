@@ -392,7 +392,9 @@ function bounds(entity) {
     for (const mi of render.meshInstances) {
       mi.node._aabbVer = (mi.node._aabbVer || 0) + 1;
       mi._updateAabb = true;
-      const c = mi.aabb.center;
+      const box = mi.aabb;
+      if (!box || !box.center || !box.halfExtents) continue;
+      const c = box.center;
       const h = mi.aabb.halfExtents;
       minX = Math.min(minX, c.x - h.x);
       minY = Math.min(minY, c.y - h.y);

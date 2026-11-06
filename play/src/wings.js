@@ -1064,7 +1064,8 @@ async function dressK1(registry, urls, root, layout) {
   const east = palaceDoor ? palaceDoor.x : r.bbox.x1;
   spin.setLocalScale(roomD / Math.max(0.001, size.sz), r.height / Math.max(0.001, size.sy), (east - west) / Math.max(0.001, size.sx));
   const fitted = boundsOf(host);
-  host.setLocalPosition((west + east) * 0.5 - fitted.cx, -fitted.minY, r.bbox.cz - fitted.cz);
+  const o = g.getPosition();
+  host.setLocalPosition((west + east) * 0.5 - (fitted.cx - o.x), -(fitted.minY - o.y), r.bbox.cz - (fitted.cz - o.z));
   g.addChild(host);
 }
 

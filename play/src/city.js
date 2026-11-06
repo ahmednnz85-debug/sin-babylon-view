@@ -3,7 +3,7 @@ import layout from './market-layout.js';
 import { DOOR_URL } from './paths.js';
 import { boundsOf as worldBounds, yaw as yawOf } from './fit.js';
 
-const { Entity, StandardMaterial, Color, Vec2 } = pc;
+const { Entity, StandardMaterial, Color, Vec2, CULLFACE_NONE } = pc;
 const ASSET = '/sin-babylon-view/original/assets/';
 const EMBED = '/sin-babylon-view/play/embedded/';
 const ARCH = { x: 1.0, y: 3.86, z: 183.85, width: 4.42, height: 8.18, depth: 0.38 };
@@ -360,6 +360,28 @@ export async function buildRoyalDoor(registry, parent) {
     p.y + ARCH.y - after.minY,
     p.z + ARCH.z - after.cz
   );
+  for (const render of model.findComponents('render') || []) {
+    for (const mi of render.meshInstances || []) {
+      const material = mi.material;
+      if (!material || material.metalness == null) continue;
+      material.metalness = 0.04;
+      material.metalnessMap = null;
+      material.glossMap = null;
+      material.aoMap = null;
+      material.roughness = 0.68;
+      if (material.diffuseMap) {
+        material.diffuseMap.srgb = true;
+        material.diffuseMap.flipY = false;
+      }
+      material.emissiveMap = null;
+      material.emissive = new Color(0.12, 0.08, 0.04);
+      material.emissiveIntensity = 0.4;
+      material.cull = CULLFACE_NONE;
+      material.update();
+      mi.drawOrder = 2;
+      mi.receiveShadow = false;
+    }
+  }
   const anims = asset.resource.animations || [];
   if (anims[0]?.resource) {
     model.addComponent('anim', { activate: true });

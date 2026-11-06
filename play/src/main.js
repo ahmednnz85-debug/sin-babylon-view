@@ -16,6 +16,7 @@ const {
   Mesh,
   MeshInstance,
   StandardMaterial,
+  TONEMAP_ACES,
   Vec2,
   Vec3
 } = pc;
@@ -67,6 +68,7 @@ camera.addComponent('camera', {
   nearClip: 0.1,
   farClip: 3000
 });
+camera.camera.toneMapping = TONEMAP_ACES;
 app.root.addChild(camera);
 
 const sun = new Entity('sun');
@@ -82,12 +84,21 @@ app.root.addChild(sun);
 const fill = new Entity('fill');
 fill.addComponent('light', {
   type: 'directional',
-  color: new Color(134 / 255, 168 / 255, 220 / 255),
+  color: new Color(0.32, 0.55, 0.85),
   intensity: 0.55,
   castShadows: false
 });
 app.root.addChild(fill);
-app.scene.ambientLight = new Color(0x8a / 255, 0x6a / 255, 0x45 / 255);
+const skyDown = new Entity('skyDown');
+skyDown.addComponent('light', {
+  type: 'directional',
+  color: new Color(0.40, 0.60, 0.82),
+  intensity: 0.9,
+  castShadows: false
+});
+app.root.addChild(skyDown);
+app.scene.ambientLight = new Color(0.9 * 0.5 * (0.40 + 0.56), 0.9 * 0.5 * (0.60 + 0.38), 0.9 * 0.5 * (0.82 + 0.20));
+app.scene.exposure = 1.1;
 app.scene.fog.type = 'exp2';
 app.scene.fog.color = new Color(0.2373, 0.1285, 0.0522);
 app.scene.fog.density = 0.0062;
@@ -395,9 +406,12 @@ function playAnim(name) {
   }
 }
 
+let streamLock = 0;
+
 async function ensurePalace() {
   if (palaceHeld || zones.palace === 'loading' || zones.palace === 'ready') return;
   zones.palace = 'loading';
+  streamLock += 1;
   try {
     const root = new Entity('palace');
     world.addChild(root);
@@ -423,6 +437,7 @@ async function ensurePalace() {
     entity.setLocalPosition(-(minX + maxX) / 2, -minY, -(minZ + maxZ) / 2);
     root.setEulerAngles(0, PAL.ry * 180 / Math.PI, 0);
     root.setPosition(PAL.x, 0, PAL.z);
+    calmPalaceMetals(entity);
     palaceHeld = true;
     zones.palace = 'ready';
     const door = await buildRoyalDoor(registry, world);
@@ -430,12 +445,29 @@ async function ensurePalace() {
     window.__door = door;
     const hb = boundsOf(hero);
     portal = { x: 1, y: door.floorY, z: door.frontZ, H: Math.max(1.2, hb.sy), doorWidth: door.width };
+    const carved = carveDoor(root, door.frontZ);
+    window.__doorHole = carved;
     shell = indexShell(root);
     window.__shellTris = shell.triangles;
-    window.__doorHole = carveDoor(root, door.frontZ);
   } catch (err) {
     zones.palace = 'error';
     console.error(err);
+  } finally {
+    streamLock -= 1;
+  }
+}
+
+function calmPalaceMetals(root) {
+  for (const render of root.findComponents('render') || []) {
+    for (const mi of render.meshInstances || []) {
+      const material = mi.material;
+      if (!material || material.metalness == null) continue;
+      if ((material.metalness || 0) > 0.35 || material.metalnessMap) {
+        material.metalness = Math.min(material.metalness || 0, 0.22);
+        material.metalnessMap = null;
+        material.update();
+      }
+    }
   }
 }
 
@@ -480,6 +512,7 @@ async function ensureInterior() {
   if (!palaceHeld) await ensurePalace();
   if (!portal) return;
   zones.interior = 'loading';
+  streamLock += 1;
   try {
     const hall = await buildHall(registry, interiorUrls, world, portal);
     let wings = { gaps: [], rooms: [] };
@@ -506,7 +539,9 @@ async function ensureInterior() {
   } catch (err) {
     zones.interior = 'error';
     console.error(err);
-    window.__gaps = [String(err && err.message ? err.message : err)];
+    window.__gaps = [String(err && err.stack ? err.stack : err)];
+  } finally {
+    streamLock -= 1;
   }
 }
 
@@ -536,6 +571,15 @@ function readMove() {
   if (keys.has('ShiftLeft') || keys.has('ShiftRight')) run = true;
   if (keys.has('KeyQ')) yaw += 0;
   return { fw, st, run };
+}
+
+function syncExteriorShell() {
+  if (!hero) return;
+  const p = hero.getPosition();
+  const inside = !!(portal && interiorVol && interiorVol.owns(p.x, p.z) && p.z > portal.z + 0.4);
+  if (zoneRoots.palace) zoneRoots.palace.enabled = !inside;
+  if (zoneRoots.avenue) zoneRoots.avenue.enabled = !inside;
+  window.__shellHidden = inside;
 }
 
 function palGround(x, z, y0) {
@@ -601,6 +645,7 @@ app.on('update', (dt) => {
     skyRoot.setPosition(c.x, c.y, c.z);
   }
   updateVegetation(camera.getPosition(), high);
+  syncExteriorShell();
   const fireMats = window.__fireMats;
   if (fireMats) {
     const t = now / 1000;
@@ -660,7 +705,7 @@ app.on('update', (dt) => {
   if (z > 10) ensurePalace();
   if (portal && z > portal.z - 30) ensureInterior();
   if (portal && z < portal.z - 90 && interiorHeld) releaseInterior();
-  if (z < -20 && palaceHeld) releasePalace();
+  if (z < -20 && palaceHeld && streamLock === 0) releasePalace();
   const pos = hero.getPosition();
   const cp = Math.cos(pitch);
   const hx = pos.x;
@@ -672,6 +717,8 @@ app.on('update', (dt) => {
   sun.lookAt(hx, hy, hz);
   fill.setPosition(hx - SUN.x * 60, 38, hz - SUN.z * 60);
   fill.lookAt(hx, hy, hz);
+  skyDown.setPosition(hx, hy + 48, hz);
+  skyDown.lookAt(hx, hy, hz);
   paintStats(frame);
 });
 
@@ -720,6 +767,14 @@ window.__look = (x, y, z, tx, ty, tz) => {
   camera.setPosition(x, y, z);
   camera.lookAt(tx, ty, tz);
   if (skyRoot) skyRoot.setPosition(x, y, z);
+  const p = hero ? hero.getPosition() : { x: (x + tx) * 0.5, y: 0, z: (z + tz) * 0.5 };
+  const hy = p.y + CAM_LOOK;
+  sun.setPosition(p.x + SUN.x * 80, hy + SUN.y * 80, p.z + SUN.z * 80);
+  sun.lookAt(p.x, hy, p.z);
+  fill.setPosition(p.x - SUN.x * 60, 38, p.z - SUN.z * 60);
+  fill.lookAt(p.x, hy, p.z);
+  skyDown.setPosition(p.x, hy + 48, p.z);
+  skyDown.lookAt(p.x, p.y, p.z);
 };
 window.__shot = () => new Promise((resolve) => {
   app.renderNextFrame = true;

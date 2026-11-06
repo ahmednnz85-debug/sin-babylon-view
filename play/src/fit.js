@@ -23,6 +23,7 @@ export function boundsOf(entity) {
       if (mi.node) mi.node._aabbVer = (mi.node._aabbVer || 0) + 1;
       mi._updateAabb = true;
       const box = mi.aabb;
+      if (!box || !box.center || !box.halfExtents) continue;
       const c = box.center;
       const h = box.halfExtents;
       minX = Math.min(minX, c.x - h.x);
